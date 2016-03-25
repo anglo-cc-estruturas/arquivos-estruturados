@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define SIZE_NAME 64
 #define SIZE_DOC 16
@@ -8,17 +9,19 @@
 #define PAUSE "read a"
 
 #define ARQ_PESSOAS "cad_pessoas.dat"
+#define INDEX_DOC "index_doc"
 
 #define ERR_OPEN_FILE_RW 1
 #define ERR_OPEN_FILE_RO 2
 #define ERR_EOF 3
 
 /* Finalizar programa incluido as seguintes opcoes
-    - menu de opcoes
-    - Gravar cadastro
-    - Imprimir todos os cadastro
+    - menu de opcoes (deixar o programa usável)
     - Imprimir um cadastro especifico informado pelo usuario
-    - Pesquisar e imprimir um cadastro baseado no documento
+    - Pesquisa indexada por nome
+    - Excluir registros logicamente (marcar como excluido)
+    - Excluir fisicamente (gerar novo arquivo com todos menos os marcados como excluidos)
+        - Após excluir fisicamente, será necessario regerar indices
 */
 
 
@@ -28,6 +31,11 @@ typedef struct pessoa {
     char documento[SIZE_DOC];
     char sexo;
 }tpPessoa;
+
+typedef struct doc_index {
+    char documento[SIZE_DOC];
+    fpos_t posicao;
+}tpDocIndex;
 
 void clear_buffer_stdin(){
     // Linux
@@ -58,7 +66,7 @@ void ler_pessoa(tpPessoa *pessoa){
 }
 
 void imprime_pessoa(tpPessoa pessoa){
-    system(CLEAR);
+    //system(CLEAR);
 
     printf("\n-------------------------------------------\n");
 
@@ -74,9 +82,9 @@ void imprime_pessoa(tpPessoa pessoa){
 
 }
 
-void abrir_arq_pessoas(char arq_nome[],char modo[], FILE **arq){
+void abrir_arquivo(char arq_nome[],char modo[], FILE **arq){
 
-    if ((*arq) = fopen(arq_nome,modo)){
+    if (((*arq) = fopen(arq_nome,modo))){
 
     }else{
         arq = NULL;
@@ -91,7 +99,7 @@ void imprime_erros(int cod_erro){
             break;
         }
         case ERR_OPEN_FILE_RO: {
-            printf("\nNao foi possivel abrir o arquivo (ERR_OPEN_FILE_RO)\n");
+            printf("\nNao foi possivel abrir fpos_t pos; o arquivo (ERR_OPEN_FILE_RO)\n");
             break;
         }
         case ERR_EOF: {
@@ -106,14 +114,23 @@ void imprime_erros(int cod_erro){
 
 void gravar_pessoa(tpPessoa pessoa){
     FILE *arq;
+    FILE *index_doc;
+    tpDocIndex doc;
 
-    abrir_arq_pessoas(ARQ_PESSOAS,"ab", &arq);
+    abrir_arquivo(ARQ_PESSOAS,"ab", &arq);
+    abrir_arquivo(INDEX_DOC,"ab", &index_doc);
 
-    if (arq != NULL){
+
+    if ((arq != NULL) && (index_doc != NULL)){
+        strcpy(doc.documento,pessoa.documento);
+
+        fgetpos(arq,&doc.posicao);
 
         fwrite(&pessoa, sizeof(tpPessoa),1,arq);
+        fwrite(&doc, sizeof(tpDocIndex),1,index_doc);
 
         fclose(arq);
+        fclose(index_doc);
     }else{
         imprime_erros(ERR_OPEN_FILE_RW);
     }
@@ -121,16 +138,15 @@ void gravar_pessoa(tpPessoa pessoa){
 
 }
 
-int ler_pessoa_arquivo(tpPessoa *pessoa, int posicao){
+int ler_pessoa_arquivo_fseek(tpPessoa *pessoa, int posicao_fseek){
      FILE *arq;
      int status=0;
 
-     abrir_arq_pessoas(ARQ_PESSOAS,"rb", &arq);
+     abrir_arquivo(ARQ_PESSOAS,"rb", &arq);
 
      if (arq != NULL){
 
-
-        fseek(arq,sizeof(tpPessoa) * posicao,SEEK_SET);
+        fseek(arq,sizeof(tpPessoa) * posicao_fseek,SEEK_SET);
 
         fread(pessoa, sizeof(tpPessoa),1,arq);
 
@@ -152,8 +168,106 @@ int ler_pessoa_arquivo(tpPessoa *pessoa, int posicao){
     return status;
 }
 
-int main()
-{
+int ler_pessoa_arquivo_fsetpos(tpPessoa *pessoa, fpos_t posicao_fpos){
+     FILE *arq;
+     int status=0;
+
+     abrir_arquivo(ARQ_PESSOAS,"rb", &arq);
+
+     if (arq != NULL){
+
+        fsetpos(arq,&posicao_fpos);
+
+        fread(pessoa, sizeof(tpPessoa),1,arq);
+
+        if (!feof(arq)){
+            status = 1;
+        }else{
+            imprime_erros(ERR_EOF);
+            status = 0;
+        }
+
+        fclose(arq);
+
+    }else{
+        imprime_erros(ERR_OPEN_FILE_RO);
+        status = 0;
+    }
+
+    return status;
+}
+
+void imprime_todas_pessoas(){
+    tpPessoa pessoa;
+    FILE *arq;
+
+    abrir_arquivo(ARQ_PESSOAS,"rb", &arq);
+
+    if (arq != NULL){
+
+        fread(&pessoa, sizeof(tpPessoa),1,arq);
+
+        while (!feof(arq)){
+            imprime_pessoa(pessoa);
+            fread(&pessoa, sizeof(tpPessoa),1,arq);
+        }
+
+        fclose(arq);
+
+
+    }else{
+        imprime_erros(ERR_OPEN_FILE_RO);
+    }
+
+}
+
+int localizar_pessoa_documento(char documento[SIZE_DOC],fpos_t *posicao){
+    FILE *index_doc;
+    tpDocIndex doc;
+    int achou = 0;
+
+    abrir_arquivo(INDEX_DOC,"rb", &index_doc);
+
+    if (index_doc != NULL){
+
+        fread(&doc, sizeof(tpDocIndex),1,index_doc);
+        while (!feof(index_doc)){
+            if (strcmp(documento,doc.documento) == 0){
+                *posicao = doc.posicao;
+                achou = 1;
+                break;
+            }else{
+                fread(&doc, sizeof(tpDocIndex),1,index_doc);
+            }
+        }
+        fclose(index_doc);
+    }else{
+        imprime_erros(ERR_OPEN_FILE_RO);
+    }
+
+    return achou;
+}
+
+void buscar_pessoa_documento(){
+    char documento[SIZE_DOC];
+    fpos_t posicao;
+    tpPessoa pessoa;
+
+    printf("Informe o documento a ser pesquisado: ");
+    clear_buffer_stdin();
+    scanf("%[^\n]s",documento);
+
+    if (localizar_pessoa_documento(documento,&posicao)){
+        ler_pessoa_arquivo_fsetpos(&pessoa,posicao);
+        imprime_pessoa(pessoa);
+    }else{
+        printf("\nDocumento nao encontrado\n");
+    }
+
+}
+
+int main(){
+
     tpPessoa pessoa;
 
 
@@ -163,8 +277,12 @@ int main()
 
     //gravar_pessoa(pessoa);
 
-    if(ler_pessoa_arquivo(&pessoa,1))
-        imprime_pessoa(pessoa);
+    //imprime_todas_pessoas();
+
+    buscar_pessoa_documento();
+
+    //if(ler_pessoa_arquivo_fseek(&pessoa,1))
+    //    imprime_pessoa(pessoa);
 
     return 0;
 }
