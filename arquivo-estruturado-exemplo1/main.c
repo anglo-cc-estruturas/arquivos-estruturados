@@ -22,6 +22,8 @@
     - Excluir registros logicamente (marcar como excluido)
     - Excluir fisicamente (gerar novo arquivo com todos menos os marcados como excluidos)
         - Após excluir fisicamente, será necessario regerar indices
+    - Listagem de todos os cadastros ordenados alfabeticamente pelo nome
+        para isso será necessrio um arquivo de indice organizado em ordem alfabetica
 */
 
 
